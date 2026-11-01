@@ -1,0 +1,39 @@
+# Local build products and downloaded dependencies
+.lake/
+lake-manifest.json
+__pycache__/
+*.pyc
+*.olean
+*.ilean
+*.log
+
+# Local credentials and environment files
+.env
+.env.*
+.api_key
+.claude_api_keys
+*.pem
+*.key
+
+# Environments, retrieval indexes, and agent outputs
+.venv/
+.cache/
+.DS_Store
+TPL_INDEX*.jsonl
+TPL_INDEX*.npy
+.TPL_INDEX.*
+results/
+benchmark_results/
+traces/
+
+# Local copies prepared for compilation
+/source/general/
+/source/general.lean
+/source/verina/
+/source/verina.lean
+/source/fvapps/
+/source/fvapps.lean
+/source/vericontest/
+/source/vericontest.lean
+/source/TPL/
+/source/TPL.lean

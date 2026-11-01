@@ -1,0 +1,317 @@
+import FormalSnarksProject.SNARKs.Lipmaa.Defs
+import Mathlib.Algebra.Polynomial.Div
+import Mathlib.Algebra.MvPolynomial.Equiv
+
+open scoped BigOperators Classical
+open MvPolynomial Option AGMProofSystemInstantiation
+
+namespace Lipmaa
+
+/-- The Lipmaa proof system satisfies the AGM soundness property for the QAP relation.
+The extractor extracts the witness from the prover's C component coefficients. -/
+lemma soundness
+    {F : Type} [Field F]
+    {n_stmt n_wit n_var : ℕ}
+    {u_stmt : Fin n_stmt → (Polynomial F) }
+    {u_wit : Fin n_wit → (Polynomial F) }
+    {v_stmt : Fin n_stmt → (Polynomial F) }
+    {v_wit : Fin n_wit → (Polynomial F) }
+    {w_stmt : Fin n_stmt → (Polynomial F) }
+    {w_wit : Fin n_wit → (Polynomial F) }
+    {r : Fin n_wit → F} :
+    (AGMProofSystemInstantiation.soundness
+      F
+      (Lipmaa
+        (F := F) (n_stmt := n_stmt) (n_wit := n_wit) (n_var := n_var)
+        (u_stmt := u_stmt) (u_wit := u_wit) (v_stmt := v_stmt)
+        (v_wit := v_wit) (w_stmt := w_stmt) (w_wit := w_wit) (r := r))
+      (Fin n_wit -> F)
+      (fun (stmt : Fin n_stmt → F) (wit : Fin n_wit -> F) =>
+        let t : Polynomial F :=
+          Finset.prod (Finset.univ : Finset (Fin n_wit)) fun i => Polynomial.X - Polynomial.C (r i)
+        (((List.sum (List.map (fun i => Polynomial.C (stmt i) * u_stmt i) (List.finRange n_stmt)))
+            + (List.sum (List.map (fun i => Polynomial.C (wit i) * u_wit i) (List.finRange n_wit))))
+            *
+          ((List.sum (List.map (fun i => Polynomial.C (stmt i) * v_stmt i) (List.finRange n_stmt)))
+            + (List.sum (List.map (fun i => Polynomial.C (wit i) * v_wit i) (List.finRange n_wit))))
+            -
+          ((List.sum (List.map (fun i => Polynomial.C (stmt i) * w_stmt i) (List.finRange n_stmt)))
+            + (List.sum (List.map (fun i => Polynomial.C (wit i) * w_wit i) (List.finRange n_wit)))))
+            %ₘ t = 0
+      )
+      (fun prover i => prover.fst Proof_G1_Idx.C (SRS_Elements_G1_Idx.q i))
+    ) := by
+  set_option maxHeartbeats 0 in
+    have optionEquivRight_to_MvPolynomial_Option {F V : Type} [Field F]
+        (p : Polynomial F) : optionEquivRight F V (to_MvPolynomial_Option V p) = C p := by
+      have he : (optionEquivRight F V).toRingHom.comp (to_MvPolynomial_Option V) = C := by
+        ext r
+        · simp [to_MvPolynomial_Option]
+        · simp [to_MvPolynomial_Option]
+      exact DFunLike.congr_fun he p
+
+    have sum_map_C {σ A R : Type} [CommSemiring R] (l : List A) (f : A → R) :
+        (l.map (fun x => C (σ := σ) (f x))).sum = C ((l.map f).sum) := by
+      induction l with
+      | nil => simp
+      | cons x xs ih => simp [ih]
+
+    have sum_map_monomial {σ A R : Type} [CommSemiring R]
+        (d : σ →₀ ℕ) (l : List A) (f : A → R) :
+        (l.map (fun x => monomial d (f x))).sum = monomial d ((l.map f).sum) := by
+      induction l with
+      | nil => simp
+      | cons x xs ih => simp [ih, map_add]
+
+    have vars_finsupp_eq (f g : Vars →₀ ℕ) : f = g ↔ f Vars.y = g Vars.y := by
+      constructor
+      · intro h; rw [h]
+      · intro h; ext x; cases x; exact h
+
+    have multiple_mod_zero {F : Type} [Field F] (t p : Polynomial F)
+        (mt : t.Monic) : (t * p) %ₘ t = 0 := by
+      exact (Polynomial.modByMonic_eq_zero_iff_dvd mt).mpr (dvd_mul_right t p)
+    unfold AGMProofSystemInstantiation.soundness verify check_poly pairing_poly
+      proof_element_G1_as_poly proof_element_G2_as_poly
+
+    -- TODO namespcace AGMProofSystemInstantiation eliminate
+    intros stmt prover eqns'
+    rcases eqns' with ⟨eqns, null⟩
+    intro t
+    have eqn := eqns ()
+    clear eqns null
+
+    -- let C_m := fun i => prover.fst Proof_G1_Idx.C (SRS_Elements_G1_Idx.q i)
+    -- let C_h := fun x => prover.fst Proof_G1_Idx.C (SRS_Elements_G1_Idx.x_pow_times_t x)
+
+    suffices
+        ((List.sum (List.map (fun i => Polynomial.C (stmt i) * u_stmt i) (List.finRange n_stmt)))
+        + (List.sum (List.map (fun i => Polynomial.C (prover.fst Proof_G1_Idx.C (SRS_Elements_G1_Idx.q i)) * u_wit i) (List.finRange n_wit))))
+        *
+        ((List.sum (List.map (fun i => Polynomial.C (stmt i) * v_stmt i) (List.finRange n_stmt)))
+        + (List.sum (List.map (fun i => Polynomial.C (prover.fst Proof_G1_Idx.C (SRS_Elements_G1_Idx.q i)) * v_wit i) (List.finRange n_wit))))
+        =
+        ((List.sum (List.map (fun i => Polynomial.C (stmt i) * w_stmt i) (List.finRange n_stmt)))
+        + (List.sum (List.map (fun i => Polynomial.C (prover.fst Proof_G1_Idx.C (SRS_Elements_G1_Idx.q i)) * w_wit i) (List.finRange n_wit))))
+        +
+        List.sum (List.map (fun x : Fin (n_var - 1) => Polynomial.C (prover.fst Proof_G1_Idx.C (SRS_Elements_G1_Idx.x_pow_times_t x)) * (Polynomial.X ^ (x : ℕ) * t)) (List.finRange (n_var - 1))) by
+
+      rw [<-sub_eq_iff_eq_add'] at this
+      have h := congr_arg (fun x => x %ₘ t) this
+      simp only at h
+      simp
+      rw [h]
+      clear this h
+
+      simp only [mul_comm _ (t), <-mul_assoc]
+      simp only [mul_assoc, List.sum_map_mul_right, List.sum_map_mul_left]
+
+      apply multiple_mod_zero
+      apply Polynomial.monic_prod_of_monic
+      intro i hi
+      exact Polynomial.monic_X_sub_C (r i)
+      done
+
+
+
+    -- Step 1: Obtain the coefficient equations of the MvPolynomials
+    simp_rw [Lipmaa] at eqn
+    -- All I want is a tactic that will apply the following simplifications to eqn in sequence.
+    -- TODO can I write a tactic taking a nested list of simp lemmas?
+    -- Can I combine all of these?
+    simp only [monomial_zero', List.singleton_append, List.cons_append, List.append_assoc,
+      List.map_cons, Sum.elim_inl, Sum.elim_inr, List.map_append, List.map_map, List.sum_cons,
+      List.sum_append, List.map_nil, List.sum_nil, add_zero, Sum.elim_lam_const_lam_const, map_one,
+      one_mul, map_zero, zero_mul, map_neg, neg_mul, neg_add_rev, zero_add, mul_zero,
+      -- Note: everything above is @simp tagged
+      Function.comp, List.sum_map_zero] at eqn
+
+    simp only [mul_add, add_mul, List.sum_map_add] at eqn
+
+    -- Move all the X (some _) terms to the left, and out of sums
+    simp only [
+      -- Associativity to obtain a right-leaning tree
+      mul_assoc,
+      -- Commutativity lemmas to move X (some _) to the left
+      mul_left_comm (C _) (X (some _)) _, mul_left_comm (List.sum _) (X (some _)) _,
+      mul_comm (C _) (X (some _)), mul_comm (List.sum _) (X (some _)),
+      -- Commutativity lemmas to move X (some _) ^ _ to the left
+      mul_left_comm (C _) (X (some _) ^ _) _, mul_left_comm (List.sum _) (X (some _) ^ _) _,
+      mul_comm (C _) (X (some _) ^ _), mul_comm (List.sum _) (X (some _) ^ _),
+      -- Move negations to the bottom
+      neg_mul, mul_neg,
+      -- Move constant multiplications (which the X (some _) terms should be) out of sums
+      List.sum_map_mul_right, List.sum_map_mul_left] at eqn
+
+    -- Apply MvPolynomial.optionEquivRight *here*, so that we can treat polynomials in Vars_X as constants
+
+    -- replace eqn := congr_arg (MvPolynomial.optionEquivRight F Vars) eqn
+    simp only [←(EquivLike.apply_eq_iff_eq (optionEquivRight _ _))] at eqn
+    simp only [map_add, map_zero, map_mul, map_one,
+      map_neg, map_list_sum, map_pow, List.map_map, Function.comp_def] at eqn
+    simp only [optionEquivRight_C, optionEquivRight_X_none, optionEquivRight_X_some, optionEquivRight_to_MvPolynomial_Option] at eqn
+
+    -- Move Cs back out so we can recognize the monomials
+    simp only [←C_mul, ←C_pow, ←C_add,
+      sum_map_C] at eqn
+
+    simp only [X, C_apply, monomial_mul, monomial_pow, one_mul, mul_one, add_zero, zero_add, mul_add, add_mul] at eqn
+    simp only [sum_map_monomial, monomial_mul, monomial_pow, one_mul, mul_one,
+      add_zero, zero_add, mul_add, add_mul, List.sum_map_add, List.sum_map_zero,
+      mul_zero, zero_mul] at eqn
+
+
+    have h0012 := congr_arg (coeff (Finsupp.single Vars.y (75 * 0 + 25 * 0 + 5 * 1 + 1 * 2))) eqn
+    have h0021 := congr_arg (coeff (Finsupp.single Vars.y (75 * 0 + 25 * 0 + 5 * 2 + 1 * 1))) eqn
+    have h0022 := congr_arg (coeff (Finsupp.single Vars.y (75 * 0 + 25 * 0 + 5 * 2 + 1 * 2))) eqn
+    have h0112 := congr_arg (coeff (Finsupp.single Vars.y (75 * 0 + 25 * 1 + 5 * 1 + 1 * 2))) eqn
+    have h0121 := congr_arg (coeff (Finsupp.single Vars.y (75 * 0 + 25 * 1 + 5 * 2 + 1 * 1))) eqn
+    have h0122 := congr_arg (coeff (Finsupp.single Vars.y (75 * 0 + 25 * 1 + 5 * 2 + 1 * 2))) eqn
+    have h0212 := congr_arg (coeff (Finsupp.single Vars.y (75 * 0 + 25 * 2 + 5 * 1 + 1 * 2))) eqn
+    have h0221 := congr_arg (coeff (Finsupp.single Vars.y (75 * 0 + 25 * 2 + 5 * 2 + 1 * 1))) eqn
+    have h0222 := congr_arg (coeff (Finsupp.single Vars.y (75 * 0 + 25 * 2 + 5 * 2 + 1 * 2))) eqn
+    have h1022 := congr_arg (coeff (Finsupp.single Vars.y (75 * 1 + 25 * 0 + 5 * 2 + 1 * 2))) eqn
+    have h1112 := congr_arg (coeff (Finsupp.single Vars.y (75 * 1 + 25 * 1 + 5 * 1 + 1 * 2))) eqn
+    have h1121 := congr_arg (coeff (Finsupp.single Vars.y (75 * 1 + 25 * 1 + 5 * 2 + 1 * 1))) eqn
+    have h1122 := congr_arg (coeff (Finsupp.single Vars.y (75 * 1 + 25 * 1 + 5 * 2 + 1 * 2))) eqn
+
+    -- have h1023 := congr_arg (coeff (Finsupp.single Vars.y (75 * 1 + 25 * 0 + 5 * 2 + 1 * 3))) eqn
+
+
+    clear eqn
+
+    simp only [coeff_monomial, coeff_add, coeff_neg, coeff_zero] at h0012 h0021 h0022 h0112 h0121 h0122 h0212 h0221 h0222 h1022 h1112 h1121 h1122
+
+    -- done
+
+    simp only [vars_finsupp_eq, Finsupp.smul_single', Finsupp.single_apply, Finsupp.add_apply] at h0012 h0021 h0022 h0112 h0121 h0122 h0212 h0221 h0222 h1022 h1112 h1121 h1122
+
+    simp (config := {decide := true}) only [ite_false, ite_true] at h0012 h0021 h0022 h0112 h0121 h0122 h0212 h0221 h0222 h1022 h1112 h1121 h1122
+
+    simp only [neg_zero, add_zero, zero_add, one_pow, mul_one, one_mul] at h0012 h0021 h0022 h0112 h0121 h0122 h0212 h0221 h0222 h1022 h1112 h1121 h1122
+
+
+    -- Step 2: Recursively simplify and case-analyze the equations
+    -- dsimp only
+
+
+    -- Set statements so that the equations are easier to read
+    -- /-
+    set sum_u_stmt := (List.sum (List.map (fun i => Polynomial.C (stmt i) * u_stmt i) (List.finRange n_stmt)))
+    set sum_v_stmt := (List.sum (List.map (fun i => Polynomial.C (stmt i) * v_stmt i) (List.finRange n_stmt)))
+    set sum_w_stmt := (List.sum (List.map (fun i => Polynomial.C (stmt i) * w_stmt i) (List.finRange n_stmt)))
+
+    set A_1 := Polynomial.C (prover.1 Proof_G1_Idx.A SRS_Elements_G1_Idx.α)
+    set A_2 := Polynomial.C (prover.1 Proof_G1_Idx.A SRS_Elements_G1_Idx.β)
+    set A_3 := Polynomial.C (prover.1 Proof_G1_Idx.A SRS_Elements_G1_Idx.δ)
+    set sum_A_x := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.A (SRS_Elements_G1_Idx.x_pow x)) * Polynomial.X ^ (x : ℕ))
+            (List.finRange n_var))
+
+    set sum_A_u_stmt := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.A (SRS_Elements_G1_Idx.y x)) *
+                u_stmt x)
+            (List.finRange n_stmt))
+    set sum_A_v_stmt := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.A (SRS_Elements_G1_Idx.y x)) *
+                v_stmt x)
+            (List.finRange n_stmt))
+    set sum_A_w_stmt := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.A (SRS_Elements_G1_Idx.y x)) *
+                w_stmt x)
+            (List.finRange n_stmt))
+    set sum_A_u_wit := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.A (SRS_Elements_G1_Idx.q x)) *
+                u_wit x)
+            (List.finRange n_wit))
+    set sum_A_v_wit := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.A (SRS_Elements_G1_Idx.q x)) *
+                v_wit x)
+            (List.finRange n_wit))
+    set sum_A_w_wit := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.A (SRS_Elements_G1_Idx.q x)) *
+                w_wit x)
+            (List.finRange n_wit))
+    set sum_A_x_t := (List.sum
+                    (List.map
+                      (fun x =>
+                        Polynomial.C (prover.1 Proof_G1_Idx.A (SRS_Elements_G1_Idx.x_pow_times_t x)) *
+                          (Polynomial.X ^ (x : ℕ) * ∏ i : Fin n_wit, (Polynomial.X - Polynomial.C (r i))))
+                      (List.finRange (n_var - 1))))
+    set B_1 := Polynomial.C (prover.2 Proof_G2_Idx.B (SRS_Elements_G2_Idx.β))
+    set B_2 := Polynomial.C (prover.2 Proof_G2_Idx.B (SRS_Elements_G2_Idx.γ))
+    set B_3 := Polynomial.C (prover.2 Proof_G2_Idx.B (SRS_Elements_G2_Idx.δ))
+
+    set sum_B_x := List.sum
+                      (List.map
+                        (fun x =>
+                          Polynomial.C (prover.2 Proof_G2_Idx.B (SRS_Elements_G2_Idx.x_pow x)) * Polynomial.X ^ (x : ℕ))
+                        (List.finRange n_var))
+
+    set C_1 := Polynomial.C (prover.1 Proof_G1_Idx.C SRS_Elements_G1_Idx.α)
+    set C_2 := Polynomial.C (prover.1 Proof_G1_Idx.C SRS_Elements_G1_Idx.β)
+    set C_3 := Polynomial.C (prover.1 Proof_G1_Idx.C SRS_Elements_G1_Idx.δ)
+    set sum_C_u_wit := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.C (SRS_Elements_G1_Idx.q x)) *
+                u_wit x)
+            (List.finRange n_wit))
+    set sum_C_v_wit := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.C (SRS_Elements_G1_Idx.q x)) *
+                v_wit x)
+            (List.finRange n_wit))
+    set sum_C_w_wit := List.sum
+          (List.map
+            (fun x =>
+              Polynomial.C (prover.1 Proof_G1_Idx.C (SRS_Elements_G1_Idx.q x)) *
+                w_wit x)
+            (List.finRange n_wit))
+    set sum_C_x_t := List.sum
+          (List.map
+            (fun x : Fin (n_var - 1) =>
+              Polynomial.C (prover.1 Proof_G1_Idx.C (SRS_Elements_G1_Idx.x_pow_times_t x)) * (Polynomial.X ^ (x : ℕ) * ∏ i : Fin n_wit, (Polynomial.X - Polynomial.C (r i))))
+            (List.finRange (n_var - 1)))
+
+    -- clear_value sum_A_x sum_A_x_t sum_B_x sum_C_x_t
+    clear_value sum_u_stmt sum_v_stmt sum_w_stmt A_1 A_2 A_3 sum_A_x sum_A_u_stmt sum_A_v_stmt sum_A_w_stmt sum_A_u_wit sum_A_v_wit sum_A_w_wit sum_A_x_t B_1 B_2 B_3 sum_B_x C_1 C_2 C_3 sum_C_u_wit sum_C_v_wit sum_C_w_wit sum_C_x_t
+    -- -/
+    -- done
+
+    integral_domain_tactic
+    all_goals
+      have hprod : A_1 * B_1 = 1 := neg_injective h1122
+      have hB : B_1 ≠ 0 := by
+        intro hz
+        simp [hz] at hprod
+      have hsum : sum_A_x_t + sum_A_w_wit = 0 := by
+        apply (mul_eq_zero.mp (show (sum_A_x_t + sum_A_w_wit) * B_1 = 0 by
+          linear_combination -h0121)).resolve_right hB
+    · have hu := neg_injective h0122
+      have hv := neg_injective h1022
+      rw [←hu, ←hv]
+      calc
+        (sum_A_x * B_1) * (A_1 * sum_B_x) = (sum_A_x * sum_B_x) * (A_1 * B_1) := by ring
+        _ = sum_A_x * sum_B_x := by rw [hprod, mul_one]
+        _ = sum_w_stmt + sum_C_w_wit + sum_C_x_t := by
+          linear_combination -h0022 - B_3 * hsum
+    · simp only [neg_add_cancel, mul_zero]
+      linear_combination -h0022 - B_3 * hsum
+
+end Lipmaa
