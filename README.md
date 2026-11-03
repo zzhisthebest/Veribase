@@ -2,6 +2,8 @@
 
 **VeriBase: Automated Construction of Theorem Libraries for Software Verification**
 
+[Paper (arXiv:2611.01743)](https://arxiv.org/abs/2611.01743)
+
 VeriBase turns successful Lean verification solutions into reusable libraries
 of code and associated theorems through proving, generalization, and harvesting.
 This repository provides the generated general library, four benchmark-specific
